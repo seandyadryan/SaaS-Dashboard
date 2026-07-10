@@ -19,6 +19,7 @@ import {
   Search,
   Server,
   Settings,
+  Sun,
   Users,
 } from "lucide-react";
 import { BrandLogo } from "@/components/layout/brand-logo";
@@ -108,6 +109,7 @@ export function AppLayout() {
     setMobileSidebarOpen,
     toggleTheme,
     addToast,
+    theme,
   } = useUiStore();
   const { session, logout } = useAuthStore();
 
@@ -249,7 +251,7 @@ export function AppLayout() {
                 <Bell className="h-5 w-5" />
               </Button>
               <Button variant="ghost" size="icon" aria-label="Toggle dark mode" onClick={toggleTheme}>
-                <Moon className="h-5 w-5" />
+                {theme === "dark" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
               </Button>
               <div className="relative hidden sm:block">
                 <button

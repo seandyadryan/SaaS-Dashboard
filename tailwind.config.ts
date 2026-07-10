@@ -6,10 +6,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#0F172A",
-        card: "#1E293B",
+        background: "rgb(var(--color-background) / <alpha-value>)",
+        card: "rgb(var(--color-card) / <alpha-value>)",
         primary: "#2563EB",
-        secondary: "#111827",
+        secondary: "rgb(var(--color-secondary) / <alpha-value>)",
         success: "#22C55E",
         warning: "#F59E0B",
         danger: "#EF4444",
