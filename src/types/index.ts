@@ -32,6 +32,10 @@ export type Activity = {
   target: string;
   time: string;
   status: "Success" | "Failed" | "Warning";
+  method?: string;
+  path?: string;
+  statusCode?: number;
+  durationMs?: number;
 };
 
 export type ApiLog = {
@@ -48,8 +52,12 @@ export type ApiLog = {
 export type StorageFile = {
   id: string;
   name: string;
+  path?: string;
   type: string;
+  mimeType?: string;
+  kind?: "image" | "video" | "audio" | "pdf" | "text" | "file";
   size: string;
+  sizeBytes?: number;
   owner: string;
   updatedAt: string;
 };

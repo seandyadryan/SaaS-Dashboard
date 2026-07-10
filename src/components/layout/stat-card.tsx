@@ -13,13 +13,13 @@ type StatCardProps = {
 export function StatCard({ label, value, change, trend = "up", icon: Icon }: StatCardProps) {
   const TrendIcon = trend === "up" ? ArrowUpRight : ArrowDownRight;
   return (
-    <Card className="group p-5 transition duration-200 hover:-translate-y-0.5 hover:border-blue-500/30 hover:shadow-glow">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <Card className="group min-w-0 p-5 transition duration-200 hover:-translate-y-0.5 hover:border-blue-500/30 hover:shadow-glow">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <p className="text-sm text-slate-400">{label}</p>
-          <p className="mt-3 text-2xl font-semibold text-white">{value}</p>
+          <p className="mt-3 break-words text-2xl font-semibold leading-tight text-white">{value}</p>
         </div>
-        <div className="rounded-xl border border-blue-400/20 bg-blue-500/12 p-3 text-blue-200 transition group-hover:bg-blue-500/20">
+        <div className="shrink-0 rounded-xl border border-blue-400/20 bg-blue-500/12 p-3 text-blue-200 transition group-hover:bg-blue-500/20">
           <Icon className="h-5 w-5" />
         </div>
       </div>

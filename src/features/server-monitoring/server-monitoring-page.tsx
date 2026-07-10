@@ -10,7 +10,7 @@ import { realtimeData, serverServices } from "@/lib/mock-data";
 export function ServerMonitoringPage() {
   return (
     <Page title="Server Monitoring" description="Realtime infrastructure view for CPU, RAM, disk, Docker, PostgreSQL, Ollama, Nginx, API, uptime, and ping.">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <StatCard label="Status Server" value="Healthy" change="All regions online" icon={ShieldCheck} />
         <StatCard label="CPU" value="68%" change="+4.1% load" icon={Cpu} trend="down" />
         <StatCard label="RAM" value="74%" change="+7.6% load" icon={Database} trend="down" />
