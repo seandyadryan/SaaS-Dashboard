@@ -10,20 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { activities, chats, growthData, users as userRows } from "@/lib/mock-data";
 import { formatCurrency, formatNumber } from "@/lib/utils";
+import { useDashboardData } from "@/lib/dashboard-api";
 import type { Activity as ActivityRow, Chat, User } from "@/types";
-
-const stats = [
-  { label: "Total Users", value: formatNumber(14290), change: "+18.4% this month", icon: Users },
-  { label: "Active Users", value: formatNumber(8731), change: "+9.7% this week", icon: Activity },
-  { label: "Premium Users", value: formatNumber(1880), change: "+22.1% this month", icon: Zap },
-  { label: "Total AI Chats", value: formatNumber(921430), change: "+31.6% this month", icon: MessageSquare },
-  { label: "Total AI Requests", value: formatNumber(3180000), change: "+14.2% today", icon: Bot },
-  { label: "Revenue", value: formatCurrency(67200), change: "+16.8% MRR", icon: DollarSign },
-  { label: "API Response Time", value: "184 ms", change: "-12.3% faster", icon: Clock3 },
-  { label: "CPU Usage", value: "68%", change: "+4.1% load", icon: Cpu, trend: "down" as const },
-  { label: "RAM Usage", value: "74%", change: "+7.6% load", icon: Database, trend: "down" as const },
-  { label: "Storage Usage", value: "59%", change: "+2.3 TB available", icon: HardDrive },
-];
 
 const activityColumns: ColumnDef<ActivityRow>[] = [
   { header: "Activity", accessorKey: "action" },
@@ -61,6 +49,20 @@ const chatColumns: ColumnDef<Chat>[] = [
 ];
 
 export function DashboardPage() {
+  const { summary, users, chats: realChats, source } = useDashboardData(userRows, chats);
+  const stats = [
+    { label: "Total Users", value: formatNumber(summary.totalUsers), change: source === "database" ? "PostgreSQL live" : "Fallback data", icon: Users },
+    { label: "Active Users", value: formatNumber(users.length), change: "Real account rows", icon: Activity },
+    { label: "Premium Users", value: formatNumber(users.filter((user) => user.premium).length), change: "Plan source ready", icon: Zap },
+    { label: "Total AI Chats", value: formatNumber(summary.totalChats), change: "Conversation table", icon: MessageSquare },
+    { label: "Total AI Requests", value: formatNumber(summary.totalMessages), change: "Message table", icon: Bot },
+    { label: "Revenue", value: formatCurrency(0), change: "Billing table not present", icon: DollarSign },
+    { label: "API Response Time", value: "184 ms", change: "-12.3% faster", icon: Clock3 },
+    { label: "CPU Usage", value: "68%", change: "+4.1% load", icon: Cpu, trend: "down" as const },
+    { label: "RAM Usage", value: "74%", change: "+7.6% load", icon: Database, trend: "down" as const },
+    { label: "Storage Usage", value: "59%", change: "+2.3 TB available", icon: HardDrive },
+  ];
+
   return (
     <Page title="Dashboard" description="Enterprise command center for users, AI traffic, subscriptions, infrastructure, and admin activity.">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -81,10 +83,10 @@ export function DashboardPage() {
           <DataTable data={activities} columns={activityColumns} searchPlaceholder="Search activity..." />
         </div>
         <div className="2xl:col-span-1">
-          <DataTable data={userRows} columns={userColumns} searchPlaceholder="Search users..." />
+          <DataTable data={users} columns={userColumns} searchPlaceholder="Search users..." />
         </div>
         <div className="2xl:col-span-1">
-          <DataTable data={chats} columns={chatColumns} searchPlaceholder="Search chats..." />
+          <DataTable data={realChats} columns={chatColumns} searchPlaceholder="Search chats..." />
         </div>
       </div>
 

@@ -23,6 +23,8 @@ docker compose up -d --build
 
 The included Nginx config serves the SPA at `dashboard.amarlo.online` with route fallback for React Router.
 
+The dashboard API reads live data from PostgreSQL tables `User`, `Conversation`, and `Message` through `DATABASE_URL`.
+
 ## REST API Integration
 
 Set the API base URL with:

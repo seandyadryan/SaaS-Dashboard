@@ -6,12 +6,14 @@ import { Page } from "@/components/layout/page";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { chats } from "@/lib/mock-data";
+import { chats, users } from "@/lib/mock-data";
+import { useDashboardData } from "@/lib/dashboard-api";
 import { downloadCsv } from "@/lib/utils";
 import type { Chat } from "@/types";
 
 export function ChatHistoryPage() {
   const [chat, setChat] = useState<Chat | null>(null);
+  const { chats: realChats, source } = useDashboardData(users, chats);
   const columns: ColumnDef<Chat>[] = [
     { header: "User", accessorKey: "user" },
     { header: "Prompt", accessorKey: "prompt" },
@@ -34,21 +36,21 @@ export function ChatHistoryPage() {
       title="Chat History"
       description="Search, filter, export, and inspect every AI conversation across models and customers."
       actions={
-        <Button onClick={() => downloadCsv("neurax-chat-history.csv", chats)}>
+        <Button onClick={() => downloadCsv("neurax-chat-history.csv", realChats)}>
           <Download className="h-4 w-4" />
           Export CSV
         </Button>
       }
     >
       <DataTable
-        data={chats}
+        data={realChats}
         columns={columns}
         searchPlaceholder="Search prompts, responses, users..."
         filter={
           <div className="flex gap-2">
             <Button variant="outline" size="sm">All Models</Button>
             <Button variant="outline" size="sm">Success</Button>
-            <Button variant="outline" size="sm">Failed</Button>
+            <Button variant="outline" size="sm">{source === "database" ? "PostgreSQL" : "Fallback"}</Button>
           </div>
         }
       />

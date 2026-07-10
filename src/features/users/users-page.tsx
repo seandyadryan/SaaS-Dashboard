@@ -8,13 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { users } from "@/lib/mock-data";
+import { chats, users } from "@/lib/mock-data";
+import { useDashboardData } from "@/lib/dashboard-api";
 import { useUiStore } from "@/store/ui-store";
 import type { User } from "@/types";
 
 export function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const { addToast } = useUiStore();
+  const { users: realUsers, source } = useDashboardData(users, chats);
 
   const action = (title: string, description: string) => addToast({ title, description, variant: "success" });
 
@@ -65,14 +67,14 @@ export function UsersPage() {
   return (
     <Page title="User Management" description="Search, filter, inspect, edit, suspend, delete, and audit customer accounts before connecting the REST API.">
       <DataTable
-        data={users}
+        data={realUsers}
         columns={columns}
         searchPlaceholder="Search name, email, provider, role..."
         filter={
           <div className="flex gap-2">
             <Button variant="outline" size="sm">All Roles</Button>
             <Button variant="outline" size="sm">Premium</Button>
-            <Button variant="outline" size="sm">Active</Button>
+            <Button variant="outline" size="sm">{source === "database" ? "PostgreSQL" : "Fallback"}</Button>
           </div>
         }
       />
