@@ -8,7 +8,6 @@ import {
   ChevronRight,
   CreditCard,
   Database,
-  Gauge,
   History,
   Home,
   KeyRound,
@@ -21,6 +20,7 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import { BrandLogo } from "@/components/layout/brand-logo";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,15 +47,7 @@ function SidebarContent({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-20 items-center gap-3 px-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-glow">
-          <Gauge className="h-5 w-5" />
-        </div>
-        {!collapsed ? (
-          <div className="min-w-0">
-            <p className="truncate text-base font-semibold text-white">NeuraX AI</p>
-            <p className="truncate text-xs text-slate-500">Admin Console</p>
-          </div>
-        ) : null}
+        <BrandLogo showText={!collapsed} markClassName="h-11 w-11" />
       </div>
       <nav className="flex-1 space-y-1 px-3">
         {navItems.map((item) => (

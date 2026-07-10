@@ -9,15 +9,20 @@ const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const adminUsername = process.env.DASHBOARD_ADMIN_USERNAME ?? "admin";
 const adminPassword = process.env.DASHBOARD_ADMIN_PASSWORD ?? "P@ssw0rd";
-const authSecret = process.env.DASHBOARD_AUTH_SECRET ?? "replace-this-secret";
+const authSecret = process.env.DASHBOARD_AUTH_SECRET ?? crypto.randomBytes(32).toString("hex");
 const storageRoot = path.resolve(process.env.STORAGE_ROOT ?? "/storage");
 const storageStatPath = path.resolve(process.env.STORAGE_STAT_PATH ?? storageRoot);
+const loginAttempts = new Map();
+const maxFailedLogins = Number(process.env.LOGIN_MAX_FAILED_ATTEMPTS ?? 5);
+const loginBlockMs = Number(process.env.LOGIN_BLOCK_MINUTES ?? 15) * 60 * 1000;
+const maxTrackedLoginIps = Number(process.env.LOGIN_MAX_TRACKED_IPS ?? 10000);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
 app.use(express.json());
+app.set("trust proxy", 1);
 
 const mimeTypes = new Map([
   [".apng", "image/apng"],
@@ -91,6 +96,52 @@ function requireAuth(req, res, next) {
 function sessionFromRequest(req) {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
   return verifyToken(token);
+}
+
+function getClientIp(req) {
+  return (req.ip || req.socket.remoteAddress || "unknown").trim();
+}
+
+function getLoginAttempt(ip) {
+  const existing = loginAttempts.get(ip);
+  if (!existing) return { count: 0, blockedUntil: 0 };
+  if (existing.blockedUntil && existing.blockedUntil <= Date.now()) {
+    loginAttempts.delete(ip);
+    return { count: 0, blockedUntil: 0 };
+  }
+  if (!existing.blockedUntil && existing.lastFailedAt && Date.now() - existing.lastFailedAt > loginBlockMs) {
+    loginAttempts.delete(ip);
+    return { count: 0, blockedUntil: 0 };
+  }
+  return existing;
+}
+
+function pruneLoginAttempts() {
+  const now = Date.now();
+  for (const [ip, attempt] of loginAttempts) {
+    if ((attempt.blockedUntil && attempt.blockedUntil <= now) || (!attempt.blockedUntil && attempt.lastFailedAt && now - attempt.lastFailedAt > loginBlockMs)) {
+      loginAttempts.delete(ip);
+    }
+  }
+
+  while (loginAttempts.size > maxTrackedLoginIps) {
+    const oldestIp = loginAttempts.keys().next().value;
+    if (!oldestIp) break;
+    loginAttempts.delete(oldestIp);
+  }
+}
+
+function recordFailedLogin(ip) {
+  pruneLoginAttempts();
+  const attempt = getLoginAttempt(ip);
+  const nextCount = attempt.count + 1;
+  const blockedUntil = nextCount >= maxFailedLogins ? Date.now() + loginBlockMs : attempt.blockedUntil;
+  loginAttempts.set(ip, { count: nextCount, blockedUntil, lastFailedAt: Date.now() });
+  return { count: nextCount, blockedUntil };
+}
+
+function clearFailedLogins(ip) {
+  loginAttempts.delete(ip);
 }
 
 async function ensureDashboardTables() {
@@ -256,11 +307,38 @@ app.get("/api/health", async (_req, res) => {
 });
 
 app.post("/api/auth/login", (req, res) => {
-  const { username, password } = req.body ?? {};
-  if (username !== adminUsername || password !== adminPassword) {
-    res.status(401).json({ error: "Invalid credentials" });
+  const ip = getClientIp(req);
+  const attempt = getLoginAttempt(ip);
+  if (attempt.blockedUntil > Date.now()) {
+    const retryAfterSeconds = Math.ceil((attempt.blockedUntil - Date.now()) / 1000);
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    res.status(429).json({
+      error: "Too many failed login attempts",
+      retryAfterSeconds,
+      blockedUntil: new Date(attempt.blockedUntil).toISOString(),
+    });
     return;
   }
+
+  const { username, password } = req.body ?? {};
+  if (username !== adminUsername || password !== adminPassword) {
+    const failed = recordFailedLogin(ip);
+    const attemptsRemaining = Math.max(maxFailedLogins - failed.count, 0);
+    if (failed.blockedUntil > Date.now()) {
+      res.setHeader("Retry-After", String(Math.ceil((failed.blockedUntil - Date.now()) / 1000)));
+      res.status(429).json({
+        error: "Too many failed login attempts",
+        attemptsRemaining,
+        blockedUntil: new Date(failed.blockedUntil).toISOString(),
+      });
+      return;
+    }
+
+    res.status(401).json({ error: "Invalid credentials", attemptsRemaining });
+    return;
+  }
+
+  clearFailedLogins(ip);
 
   const session = {
     username: adminUsername,

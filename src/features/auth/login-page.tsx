@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { Bot, Eye, EyeOff, LockKeyhole, LogIn, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, LogIn, ShieldCheck } from "lucide-react";
+import { BrandLogo } from "@/components/layout/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -80,13 +81,7 @@ export function LoginPage() {
         <Card className="mx-auto w-full max-w-md border-slate-700/70 bg-slate-900/86">
           <CardContent className="p-7 sm:p-8">
             <div className="mb-8 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary shadow-glow">
-                <Bot className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-white">NeuraX AI</p>
-                <p className="text-sm text-slate-500">Superuser Login</p>
-              </div>
+              <BrandLogo markClassName="h-12 w-12" />
             </div>
 
             <form className="space-y-5" onSubmit={handleSubmit}>
