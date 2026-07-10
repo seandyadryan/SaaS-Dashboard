@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
@@ -42,6 +43,10 @@ const navItems = [
   { label: "Activity Log", icon: History, to: "/activity-log" },
   { label: "Settings", icon: Settings, to: "/settings" },
 ];
+
+const idleTimeoutMs = 30 * 60 * 1000;
+const lastActivityKey = "neurax_admin_last_activity";
+const activityEvents = ["click", "keydown", "mousemove", "scroll", "touchstart", "visibilitychange"];
 
 function SidebarContent({ collapsed }: { collapsed: boolean }) {
   return (
@@ -97,6 +102,55 @@ export function AppLayout() {
     addToast,
   } = useUiStore();
   const { session, logout } = useAuthStore();
+
+  useEffect(() => {
+    if (!session) return undefined;
+
+    let timeoutId = window.setTimeout(() => undefined, idleTimeoutMs);
+
+    const closeIdleSession = () => {
+      logout();
+      addToast({
+        title: "Sesi berakhir",
+        description: "Anda otomatis logout setelah 30 menit tanpa aktivitas.",
+        variant: "warning",
+      });
+    };
+
+    const scheduleTimeout = () => {
+      window.clearTimeout(timeoutId);
+      const lastActivity = Number(localStorage.getItem(lastActivityKey) ?? Date.now());
+      const remainingMs = idleTimeoutMs - (Date.now() - lastActivity);
+
+      if (remainingMs <= 0) {
+        closeIdleSession();
+        return;
+      }
+
+      timeoutId = window.setTimeout(closeIdleSession, remainingMs);
+    };
+
+    const recordActivity = () => {
+      if (document.visibilityState === "hidden") return;
+      localStorage.setItem(lastActivityKey, String(Date.now()));
+      scheduleTimeout();
+    };
+
+    const existingActivity = Number(localStorage.getItem(lastActivityKey) ?? Date.now());
+    if (Date.now() - existingActivity >= idleTimeoutMs) {
+      closeIdleSession();
+      return undefined;
+    }
+
+    localStorage.setItem(lastActivityKey, String(Date.now()));
+    scheduleTimeout();
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, recordActivity, { passive: true }));
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, recordActivity));
+    };
+  }, [addToast, logout, session]);
 
   return (
     <div className="min-h-screen grid-surface text-white">

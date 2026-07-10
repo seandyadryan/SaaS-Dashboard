@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Download, Eye, File, FileAudio, FileImage, FileText, FileVideo, HardDrive, RefreshCw } from "lucide-react";
+import { Download, Eye, File, FileAudio, FileImage, FileText, FileVideo, Folder, HardDrive, RefreshCw } from "lucide-react";
 import { DataTable } from "@/components/data-table/data-table";
 import { Page } from "@/components/layout/page";
 import { StatCard } from "@/components/layout/stat-card";
@@ -27,6 +27,7 @@ const fallbackSummary: StorageSummary = {
 };
 
 const fileIcons = {
+  folder: Folder,
   image: FileImage,
   video: FileVideo,
   audio: FileAudio,
@@ -73,6 +74,11 @@ export function StoragePage() {
   }, [previewUrl]);
 
   const openPreview = async (file: StorageFile) => {
+    if (file.kind === "folder") {
+      addToast({ title: "Folder tersedia", description: file.path ?? file.name, variant: "default" });
+      return;
+    }
+
     if (!file.path) {
       addToast({ title: "Preview tidak tersedia", description: file.name, variant: "warning" });
       return;
@@ -98,6 +104,11 @@ export function StoragePage() {
   };
 
   const downloadFile = async (file: StorageFile) => {
+    if (file.kind === "folder") {
+      addToast({ title: "Folder tidak dapat di-download", description: file.path ?? file.name, variant: "warning" });
+      return;
+    }
+
     if (!file.path) {
       addToast({ title: "Download tidak tersedia", description: file.name, variant: "warning" });
       return;

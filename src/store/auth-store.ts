@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { apiClient } from "@/lib/api";
 
 const AUTH_STORAGE_KEY = "neurax_admin_session";
+const LAST_ACTIVITY_KEY = "neurax_admin_last_activity";
 
 type AdminSession = {
   username: string;
@@ -46,6 +47,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(response.data.session));
       localStorage.setItem("neurax_admin_token", response.data.token);
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
       set({ session: response.data.session });
       return { success: true };
     } catch (error) {
@@ -82,6 +84,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     localStorage.removeItem("neurax_admin_token");
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     set({ session: null });
   },
 }));

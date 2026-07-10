@@ -181,6 +181,10 @@ function getFileKind(mimeType) {
   return "file";
 }
 
+function toStoragePath(value) {
+  return value.replaceAll(path.sep, "/");
+}
+
 function resolveStoragePath(relativePath = "") {
   const resolved = path.resolve(storageRoot, relativePath);
   if (resolved !== storageRoot && !resolved.startsWith(`${storageRoot}${path.sep}`)) {
@@ -202,6 +206,19 @@ async function walkFiles(directory, base = "", limit = 250, results = []) {
     const stats = await fs.stat(absolute);
 
     if (entry.isDirectory()) {
+      const folderPath = toStoragePath(relative);
+      results.push({
+        id: Buffer.from(`folder:${folderPath}`).toString("base64url"),
+        name: entry.name,
+        path: folderPath,
+        type: "FOLDER",
+        mimeType: "inode/directory",
+        kind: "folder",
+        size: "-",
+        sizeBytes: 0,
+        owner: base.split(path.sep)[0] || entry.name || "Server",
+        updatedAt: stats.mtime.toISOString(),
+      });
       await walkFiles(absolute, relative, limit, results);
       continue;
     }
@@ -210,7 +227,7 @@ async function walkFiles(directory, base = "", limit = 250, results = []) {
     results.push({
       id: Buffer.from(relative).toString("base64url"),
       name: entry.name,
-      path: relative.replaceAll(path.sep, "/"),
+      path: toStoragePath(relative),
       type: path.extname(entry.name).replace(".", "").toUpperCase() || "FILE",
       mimeType,
       kind: getFileKind(mimeType),

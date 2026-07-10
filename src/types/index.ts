@@ -55,7 +55,7 @@ export type StorageFile = {
   path?: string;
   type: string;
   mimeType?: string;
-  kind?: "image" | "video" | "audio" | "pdf" | "text" | "file";
+  kind?: "folder" | "image" | "video" | "audio" | "pdf" | "text" | "file";
   size: string;
   sizeBytes?: number;
   owner: string;
