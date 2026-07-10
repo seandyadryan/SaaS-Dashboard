@@ -32,22 +32,23 @@ export function LoginPage() {
     setLoading(true);
 
     window.setTimeout(() => {
-      const success = login(username.trim(), password);
-      setLoading(false);
+      void login(username.trim(), password).then((success) => {
+        setLoading(false);
 
-      if (!success) {
+        if (!success) {
+          addToast({
+            title: "Login gagal",
+            description: "Username atau password superuser tidak sesuai.",
+            variant: "danger",
+          });
+          return;
+        }
+
         addToast({
-          title: "Login gagal",
-          description: "Username atau password superuser tidak sesuai.",
-          variant: "danger",
+          title: "Login berhasil",
+          description: "Selamat datang di NeuraX AI Admin Console.",
+          variant: "success",
         });
-        return;
-      }
-
-      addToast({
-        title: "Login berhasil",
-        description: "Selamat datang di NeuraX AI Admin Console.",
-        variant: "success",
       });
     }, 360);
   };

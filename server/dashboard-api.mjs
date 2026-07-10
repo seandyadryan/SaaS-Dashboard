@@ -1,15 +1,61 @@
 import express from "express";
+import crypto from "node:crypto";
 import pg from "pg";
 
 const { Pool } = pg;
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
+const adminUsername = process.env.DASHBOARD_ADMIN_USERNAME ?? "admin";
+const adminPassword = process.env.DASHBOARD_ADMIN_PASSWORD ?? "P@ssw0rd";
+const authSecret = process.env.DASHBOARD_AUTH_SECRET ?? "replace-this-secret";
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
 app.use(express.json());
+
+function base64url(value) {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function sign(value) {
+  return crypto.createHmac("sha256", authSecret).update(value).digest("base64url");
+}
+
+function createToken(session) {
+  const payload = base64url({
+    ...session,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12,
+  });
+  return `${payload}.${sign(payload)}`;
+}
+
+function verifyToken(token) {
+  if (!token || !token.includes(".")) return null;
+  const [payload, signature] = token.split(".");
+  if (signature !== sign(payload)) return null;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!parsed.exp || parsed.exp < Math.floor(Date.now() / 1000)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const session = verifyToken(token);
+  if (!session) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  req.session = session;
+  next();
+}
 
 function initials(name = "User") {
   return name
@@ -68,7 +114,28 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-app.get("/api/dashboard/summary", async (_req, res) => {
+app.post("/api/auth/login", (req, res) => {
+  const { username, password } = req.body ?? {};
+  if (username !== adminUsername || password !== adminPassword) {
+    res.status(401).json({ error: "Invalid credentials" });
+    return;
+  }
+
+  const session = {
+    username: adminUsername,
+    name: "NeuraX Superuser",
+    role: "Superuser",
+    issuedAt: new Date().toISOString(),
+  };
+
+  res.json({ session, token: createToken(session) });
+});
+
+app.get("/api/auth/me", requireAuth, (req, res) => {
+  res.json({ session: req.session });
+});
+
+app.get("/api/dashboard/summary", requireAuth, async (_req, res) => {
   try {
     const result = await query(`
       select
@@ -84,7 +151,7 @@ app.get("/api/dashboard/summary", async (_req, res) => {
   }
 });
 
-app.get("/api/dashboard/users", async (_req, res) => {
+app.get("/api/dashboard/users", requireAuth, async (_req, res) => {
   try {
     const result = await query(`
       select id, "googleId", email, name, "photoUrl", "createdAt", "updatedAt"
@@ -98,7 +165,7 @@ app.get("/api/dashboard/users", async (_req, res) => {
   }
 });
 
-app.get("/api/dashboard/chats", async (_req, res) => {
+app.get("/api/dashboard/chats", requireAuth, async (_req, res) => {
   try {
     const result = await query(`
       select

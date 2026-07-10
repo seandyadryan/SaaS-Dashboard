@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { apiClient } from "@/lib/api";
 
 const AUTH_STORAGE_KEY = "neurax_admin_session";
 
@@ -11,7 +12,7 @@ type AdminSession = {
 
 type AuthState = {
   session: AdminSession | null;
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
 };
 
@@ -29,21 +30,19 @@ function getInitialSession(): AdminSession | null {
 
 export const useAuthStore = create<AuthState>((set) => ({
   session: getInitialSession(),
-  login: (username, password) => {
-    if (username !== "admin" || password !== "P@ssw0rd") {
+  login: async (username, password) => {
+    try {
+      const response = await apiClient.post<{ session: AdminSession; token: string }>("/auth/login", {
+        username,
+        password,
+      });
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(response.data.session));
+      localStorage.setItem("neurax_admin_token", response.data.token);
+      set({ session: response.data.session });
+      return true;
+    } catch {
       return false;
     }
-
-    const session: AdminSession = {
-      username: "admin",
-      name: "NeuraX Superuser",
-      role: "Superuser",
-      issuedAt: new Date().toISOString(),
-    };
-
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
-    set({ session });
-    return true;
   },
   logout: () => {
     localStorage.removeItem(AUTH_STORAGE_KEY);
