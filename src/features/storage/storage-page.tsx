@@ -162,19 +162,15 @@ export function StoragePage() {
           </div>
         );
 
-        if (row.original.kind === "folder") {
-          return (
-            <button
-              type="button"
-              className="w-full rounded-xl p-1 text-left transition hover:bg-slate-800/45 focus:outline-none focus:ring-2 focus:ring-primary/40"
-              onClick={() => void openPreview(row.original)}
-            >
-              {content}
-            </button>
-          );
-        }
-
-        return content;
+        return (
+          <button
+            type="button"
+            className="w-full rounded-xl p-1 text-left transition hover:bg-slate-800/45 focus:outline-none focus:ring-2 focus:ring-primary/40"
+            onClick={() => void openPreview(row.original)}
+          >
+            {content}
+          </button>
+        );
       },
     },
     { header: "Type", accessorKey: "type", cell: ({ row }) => <Badge>{row.original.type}</Badge> },
