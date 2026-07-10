@@ -70,7 +70,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (apiError.response?.status === 429) {
         return {
           success: false,
-          message: "IP ini sementara diblokir karena terlalu banyak percobaan login gagal.",
+          message: "User ini sementara diblokir karena terlalu banyak percobaan login gagal.",
           attemptsRemaining: data?.attemptsRemaining,
           retryAfterSeconds: data?.retryAfterSeconds,
           blockedUntil: data?.blockedUntil,
@@ -79,7 +79,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       return {
         success: false,
-        message: "Username atau password salah.",
+        message: "Email atau password salah.",
         attemptsRemaining: data?.attemptsRemaining,
       };
     }

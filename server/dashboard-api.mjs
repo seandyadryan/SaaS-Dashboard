@@ -7,9 +7,7 @@ import pg from "pg";
 const { Pool } = pg;
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const adminUsername = process.env.DASHBOARD_ADMIN_USERNAME ?? "admin";
 const initialUserPassword = process.env.DASHBOARD_INITIAL_USER_PASSWORD ?? "P@ssw0rd";
-const adminEmail = (process.env.DASHBOARD_ADMIN_EMAIL ?? "").trim().toLowerCase();
 const authSecret = process.env.DASHBOARD_AUTH_SECRET ?? crypto.randomBytes(32).toString("hex");
 const storageRoot = path.resolve(process.env.STORAGE_ROOT ?? "/storage");
 const storageStatPath = path.resolve(process.env.STORAGE_STAT_PATH ?? storageRoot);
@@ -177,9 +175,17 @@ async function ensureDashboardTables() {
     )
   `);
   await query(`alter table public."User" add column if not exists password text`);
+  await query(`alter table public."User" add column if not exists "bLock" integer not null default 0`);
+  await query(`alter table public."User" add column if not exists "failedLoginCount" integer not null default 0`);
+  await query(`alter table public."User" add column if not exists "blockedUntil" timestamp without time zone`);
+  await clearExpiredUserBlocks();
 
   const initialHash = hashPassword(initialUserPassword);
   await query(`update public."User" set password = $1 where password is null or password = ''`, [initialHash]);
+}
+
+async function clearExpiredUserBlocks() {
+  await query(`update public."User" set "bLock" = 0, "failedLoginCount" = 0, "blockedUntil" = null where "bLock" = 1 and "blockedUntil" <= now()`);
 }
 
 function formatBytes(value) {
@@ -278,7 +284,7 @@ app.use((req, res, next) => {
         res.statusCode,
         res.statusCode < 400,
         Date.now() - startedAt,
-        session?.username ?? (req.path === "/api/auth/login" ? "admin" : null),
+        session?.username ?? (req.path === "/api/auth/login" ? String(req.body?.username ?? "").slice(0, 255) : null),
         req.ip,
         req.headers["user-agent"]?.slice(0, 500) ?? null,
       ],
@@ -314,62 +320,98 @@ function toUser(row) {
   };
 }
 
-function isDashboardAdminUsername(username) {
-  const normalizedUsername = String(username ?? "").trim().toLowerCase();
-  return normalizedUsername === adminUsername.toLowerCase() || (Boolean(adminEmail) && normalizedUsername === adminEmail);
-}
-
-async function findDashboardAdminUser(username) {
-  const normalizedUsername = String(username ?? "").trim().toLowerCase();
-  const lookupEmail = adminEmail || (normalizedUsername.includes("@") ? normalizedUsername : "");
-  if (!lookupEmail) return null;
-
-  const result = await query(
-    `
-      select id, email, name, "photoUrl", "createdAt", "updatedAt"
-      from public."User"
-      where lower(email) = $1
-      limit 1
-    `,
-    [lookupEmail],
-  );
-
-  return result.rows[0] ?? null;
-}
-
 async function findLoginUser(username) {
   const normalizedUsername = String(username ?? "").trim().toLowerCase();
-  const lookupEmail = isDashboardAdminUsername(normalizedUsername) ? adminEmail : normalizedUsername;
-  if (!lookupEmail || !lookupEmail.includes("@")) return null;
+  if (!normalizedUsername || !normalizedUsername.includes("@")) return null;
 
   const result = await query(
     `
-      select id, email, name, "photoUrl", password, "createdAt", "updatedAt"
+      select id, email, name, "photoUrl", password, "bLock", "failedLoginCount", "blockedUntil", "createdAt", "updatedAt"
       from public."User"
       where lower(email) = $1
       limit 1
     `,
-    [lookupEmail],
+    [normalizedUsername],
   );
 
   return result.rows[0] ?? null;
 }
 
-function toAdminSession(row, fallbackUsername) {
+function toAdminSession(row) {
   return {
     id: row?.id ?? null,
-    username: row?.email ?? fallbackUsername,
+    username: row?.email ?? null,
     email: row?.email ?? null,
-    name: row?.name || row?.email || fallbackUsername,
+    name: row?.name || row?.email || "User",
     photoUrl: row?.photoUrl ?? null,
     role: "Superuser",
     issuedAt: new Date().toISOString(),
   };
 }
 
-function canAccessDashboard(row) {
-  if (!adminEmail) return true;
-  return String(row?.email ?? "").trim().toLowerCase() === adminEmail;
+function secondsUntil(dateValue) {
+  return Math.max(Math.ceil((new Date(dateValue).getTime() - Date.now()) / 1000), 0);
+}
+
+function isUserBlocked(row) {
+  return Number(row?.bLock ?? 0) === 1 && row?.blockedUntil && secondsUntil(row.blockedUntil) > 0;
+}
+
+async function clearExpiredUserBlock(row) {
+  if (Number(row?.bLock ?? 0) !== 1 || !row?.blockedUntil || secondsUntil(row.blockedUntil) > 0) {
+    return row;
+  }
+
+  await query(`update public."User" set "bLock" = 0, "failedLoginCount" = 0, "blockedUntil" = null where id = $1`, [row.id]);
+  return {
+    ...row,
+    bLock: 0,
+    failedLoginCount: 0,
+    blockedUntil: null,
+  };
+}
+
+async function recordFailedUserLogin(row) {
+  const nextCount = Number(row?.failedLoginCount ?? 0) + 1;
+  if (nextCount >= maxFailedLogins) {
+    const result = await query(
+      `
+        update public."User"
+        set "bLock" = 1,
+            "failedLoginCount" = $2,
+            "blockedUntil" = now() + ($3::text || ' minutes')::interval,
+            "updatedAt" = now()
+        where id = $1
+        returning "failedLoginCount", "blockedUntil"
+      `,
+      [row.id, nextCount, Number(process.env.LOGIN_BLOCK_MINUTES ?? 15)],
+    );
+    return {
+      attemptsRemaining: 0,
+      blockedUntil: result.rows[0]?.blockedUntil,
+    };
+  }
+
+  await query(
+    `
+      update public."User"
+      set "bLock" = 0,
+          "failedLoginCount" = $2,
+          "blockedUntil" = null,
+          "updatedAt" = now()
+      where id = $1
+    `,
+    [row.id, nextCount],
+  );
+
+  return {
+    attemptsRemaining: Math.max(maxFailedLogins - nextCount, 0),
+    blockedUntil: null,
+  };
+}
+
+async function clearUserLoginFailures(row) {
+  await query(`update public."User" set "bLock" = 0, "failedLoginCount" = 0, "blockedUntil" = null where id = $1`, [row.id]);
 }
 
 function toChat(row) {
@@ -403,19 +445,6 @@ app.get("/api/health", async (_req, res) => {
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  const ip = getClientIp(req);
-  const attempt = getLoginAttempt(ip);
-  if (attempt.blockedUntil > Date.now()) {
-    const retryAfterSeconds = Math.ceil((attempt.blockedUntil - Date.now()) / 1000);
-    res.setHeader("Retry-After", String(retryAfterSeconds));
-    res.status(429).json({
-      error: "Too many failed login attempts",
-      retryAfterSeconds,
-      blockedUntil: new Date(attempt.blockedUntil).toISOString(),
-    });
-    return;
-  }
-
   const { username, password } = req.body ?? {};
   let loginUser = null;
 
@@ -426,27 +455,46 @@ app.post("/api/auth/login", async (req, res) => {
     return;
   }
 
-  if (!loginUser || !canAccessDashboard(loginUser) || !verifyPassword(password, loginUser.password)) {
-    const failed = recordFailedLogin(ip);
-    const attemptsRemaining = Math.max(maxFailedLogins - failed.count, 0);
-    if (failed.blockedUntil > Date.now()) {
-      res.setHeader("Retry-After", String(Math.ceil((failed.blockedUntil - Date.now()) / 1000)));
+  if (!loginUser) {
+    res.status(401).json({ error: "Invalid credentials" });
+    return;
+  }
+
+  loginUser = await clearExpiredUserBlock(loginUser);
+  if (isUserBlocked(loginUser)) {
+    const retryAfterSeconds = secondsUntil(loginUser.blockedUntil);
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    res.status(429).json({
+      error: "User is temporarily blocked",
+      attemptsRemaining: 0,
+      retryAfterSeconds,
+      blockedUntil: new Date(loginUser.blockedUntil).toISOString(),
+    });
+    return;
+  }
+
+  if (!verifyPassword(password, loginUser.password)) {
+    const failed = await recordFailedUserLogin(loginUser);
+    if (failed.blockedUntil) {
+      const retryAfterSeconds = secondsUntil(failed.blockedUntil);
+      res.setHeader("Retry-After", String(retryAfterSeconds));
       res.status(429).json({
-        error: "Too many failed login attempts",
-        attemptsRemaining,
+        error: "User is temporarily blocked",
+        attemptsRemaining: 0,
+        retryAfterSeconds,
         blockedUntil: new Date(failed.blockedUntil).toISOString(),
       });
       return;
     }
 
-    res.status(401).json({ error: "Invalid credentials", attemptsRemaining });
+    res.status(401).json({ error: "Invalid credentials", attemptsRemaining: failed.attemptsRemaining });
     return;
   }
 
-  clearFailedLogins(ip);
+  await clearUserLoginFailures(loginUser);
 
   try {
-    const session = toAdminSession(loginUser, adminUsername);
+    const session = toAdminSession(loginUser);
     res.json({ session, token: createToken(session) });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -630,6 +678,9 @@ ensureDashboardTables()
     app.listen(port, "0.0.0.0", () => {
       console.log(`NeuraX dashboard API listening on ${port}`);
     });
+    setInterval(() => {
+      clearExpiredUserBlocks().catch((error) => console.error("Failed to clear expired user blocks", error));
+    }, 60 * 1000);
   })
   .catch((error) => {
     console.error("Failed to prepare dashboard tables", error);

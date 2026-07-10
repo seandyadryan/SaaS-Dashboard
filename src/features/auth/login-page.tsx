@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { AlertTriangle, Eye, EyeOff, LockKeyhole, LogIn } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, LogIn, Mail } from "lucide-react";
 import { BrandLogo } from "@/components/layout/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +19,7 @@ export function LoginPage() {
   const location = useLocation();
   const { session, login } = useAuthStore();
   const { addToast } = useUiStore();
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,9 +45,9 @@ export function LoginPage() {
             : "";
           const attemptsText =
             typeof result.attemptsRemaining === "number"
-              ? ` Sisa percobaan sebelum IP diblokir: ${result.attemptsRemaining}.`
+              ? ` Sisa percobaan sebelum user diblokir: ${result.attemptsRemaining}.`
               : "";
-          const message = `${result.message ?? "Username atau password salah."}${attemptsText}${retryText}`;
+          const message = `${result.message ?? "Email atau password salah."}${attemptsText}${retryText}`;
           setWarning(message);
           addToast({
             title: "Login gagal",
@@ -85,10 +85,17 @@ export function LoginPage() {
               ) : null}
 
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-300">Username</span>
+                <span className="mb-2 block text-sm font-medium text-slate-300">Email</span>
                 <div className="relative">
-                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                  <Input className="pl-9" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <Input
+                    className="pl-9"
+                    type="email"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    placeholder="nama@email.com"
+                    autoComplete="email"
+                  />
                 </div>
               </label>
 
