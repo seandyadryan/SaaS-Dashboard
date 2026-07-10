@@ -10,9 +10,17 @@ type AdminSession = {
   issuedAt: string;
 };
 
+export type LoginResult = {
+  success: boolean;
+  message?: string;
+  attemptsRemaining?: number;
+  retryAfterSeconds?: number;
+  blockedUntil?: string;
+};
+
 type AuthState = {
   session: AdminSession | null;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<LoginResult>;
   logout: () => void;
 };
 
@@ -39,9 +47,36 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(response.data.session));
       localStorage.setItem("neurax_admin_token", response.data.token);
       set({ session: response.data.session });
-      return true;
-    } catch {
-      return false;
+      return { success: true };
+    } catch (error) {
+      const apiError = error as {
+        response?: {
+          status?: number;
+          data?: {
+            error?: string;
+            attemptsRemaining?: number;
+            retryAfterSeconds?: number;
+            blockedUntil?: string;
+          };
+        };
+      };
+      const data = apiError.response?.data;
+
+      if (apiError.response?.status === 429) {
+        return {
+          success: false,
+          message: "IP ini sementara diblokir karena terlalu banyak percobaan login gagal.",
+          attemptsRemaining: data?.attemptsRemaining,
+          retryAfterSeconds: data?.retryAfterSeconds,
+          blockedUntil: data?.blockedUntil,
+        };
+      }
+
+      return {
+        success: false,
+        message: "Username atau password salah.",
+        attemptsRemaining: data?.attemptsRemaining,
+      };
     }
   },
   logout: () => {

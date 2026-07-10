@@ -1,10 +1,11 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { Eye, EyeOff, LockKeyhole, LogIn, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, LockKeyhole, LogIn } from "lucide-react";
 import { BrandLogo } from "@/components/layout/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ToastViewport } from "@/components/ui/toast";
 import { useAuthStore } from "@/store/auth-store";
 import { useUiStore } from "@/store/ui-store";
 
@@ -22,6 +23,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
   const redirectTo = (location.state as LocationState | null)?.from?.pathname ?? "/";
 
   if (session) {
@@ -31,15 +33,25 @@ export function LoginPage() {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
+    setWarning(null);
 
     window.setTimeout(() => {
-      void login(username.trim(), password).then((success) => {
+      void login(username.trim(), password).then((result) => {
         setLoading(false);
 
-        if (!success) {
+        if (!result.success) {
+          const retryText = result.retryAfterSeconds
+            ? ` Coba lagi dalam ${Math.ceil(result.retryAfterSeconds / 60)} menit.`
+            : "";
+          const attemptsText =
+            typeof result.attemptsRemaining === "number"
+              ? ` Sisa percobaan sebelum IP diblokir: ${result.attemptsRemaining}.`
+              : "";
+          const message = `${result.message ?? "Username atau password salah."}${attemptsText}${retryText}`;
+          setWarning(message);
           addToast({
             title: "Login gagal",
-            description: "Username atau password superuser tidak sesuai.",
+            description: message,
             variant: "danger",
           });
           return;
@@ -57,34 +69,21 @@ export function LoginPage() {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10 text-white grid-surface">
       <div className="absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_50%_0%,rgba(37,99,235,0.34),transparent_36rem)]" />
-      <div className="relative z-10 grid w-full max-w-6xl gap-8 lg:grid-cols-[1fr_440px] lg:items-center">
-        <section className="hidden lg:block">
-          <div className="mb-8 inline-flex items-center gap-3 rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
-            <ShieldCheck className="h-4 w-4" />
-            Secure Admin Gateway
-          </div>
-          <h1 className="max-w-3xl text-5xl font-semibold leading-tight tracking-normal text-white">
-            NeuraX AI Admin Console
-          </h1>
-          <p className="mt-5 max-w-xl text-base leading-7 text-slate-400">
-            Masuk sebagai superuser untuk mengelola pengguna, monitor AI, subscription, analytics, server, storage, API, dan audit log.
-          </p>
-          <div className="mt-10 grid max-w-2xl gap-4 sm:grid-cols-3">
-            {["Realtime AI Ops", "PostgreSQL Ready", "Enterprise Control"].map((item) => (
-              <div key={item} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300 shadow-soft">
-                {item}
-              </div>
-            ))}
-          </div>
-        </section>
-
+      <div className="relative z-10 w-full max-w-md">
         <Card className="mx-auto w-full max-w-md border-slate-700/70 bg-slate-900/86">
           <CardContent className="p-7 sm:p-8">
-            <div className="mb-8 flex items-center gap-3">
-              <BrandLogo markClassName="h-12 w-12" />
+            <div className="mb-8 flex items-center justify-center">
+              <BrandLogo showText={false} markClassName="h-12 w-12" />
             </div>
 
             <form className="space-y-5" onSubmit={handleSubmit}>
+              {warning ? (
+                <div className="flex gap-3 rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-100">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{warning}</p>
+                </div>
+              ) : null}
+
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-300">Username</span>
                 <div className="relative">
@@ -123,6 +122,7 @@ export function LoginPage() {
           </CardContent>
         </Card>
       </div>
+      <ToastViewport />
     </main>
   );
 }
