@@ -150,7 +150,7 @@ export function StoragePage() {
       header: "File List",
       cell: ({ row }) => {
         const Icon = fileIcons[row.original.kind ?? "file"];
-        return (
+        const content = (
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-500/12 text-blue-200">
               <Icon className="h-4 w-4" />
@@ -161,6 +161,20 @@ export function StoragePage() {
             </div>
           </div>
         );
+
+        if (row.original.kind === "folder") {
+          return (
+            <button
+              type="button"
+              className="w-full rounded-xl p-1 text-left transition hover:bg-slate-800/45 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              onClick={() => void openPreview(row.original)}
+            >
+              {content}
+            </button>
+          );
+        }
+
+        return content;
       },
     },
     { header: "Type", accessorKey: "type", cell: ({ row }) => <Badge>{row.original.type}</Badge> },
