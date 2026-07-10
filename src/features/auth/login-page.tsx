@@ -59,7 +59,7 @@ export function LoginPage() {
 
         addToast({
           title: "Login berhasil",
-          description: "Selamat datang di NeuraX AI Admin Console.",
+          description: "Selamat datang.",
           variant: "success",
         });
       });
