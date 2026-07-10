@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
@@ -25,7 +25,9 @@ import { BrandLogo } from "@/components/layout/brand-logo";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { ToastViewport } from "@/components/ui/toast";
+import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 import { useUiStore } from "@/store/ui-store";
@@ -93,6 +95,12 @@ function SidebarContent({ collapsed }: { collapsed: boolean }) {
 
 export function AppLayout() {
   const location = useLocation();
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
   const {
     sidebarCollapsed,
     mobileSidebarOpen,
@@ -102,6 +110,42 @@ export function AppLayout() {
     addToast,
   } = useUiStore();
   const { session, logout } = useAuthStore();
+
+  const resetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setSavingPassword(false);
+  };
+
+  const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (newPassword.length < 8) {
+      addToast({ title: "Password terlalu pendek", description: "Password baru minimal 8 karakter.", variant: "warning" });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      addToast({ title: "Konfirmasi tidak cocok", description: "Ulangi password baru dengan nilai yang sama.", variant: "warning" });
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      await apiClient.post("/auth/change-password", {
+        currentPassword,
+        newPassword,
+      });
+      addToast({ title: "Password berhasil diganti", description: "Gunakan password baru untuk login berikutnya.", variant: "success" });
+      setChangePasswordOpen(false);
+      resetPasswordForm();
+    } catch {
+      addToast({ title: "Gagal mengganti password", description: "Password lama tidak sesuai atau request gagal.", variant: "danger" });
+    } finally {
+      setSavingPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (!session) return undefined;
@@ -207,13 +251,91 @@ export function AppLayout() {
               <Button variant="ghost" size="icon" aria-label="Toggle dark mode" onClick={toggleTheme}>
                 <Moon className="h-5 w-5" />
               </Button>
-              <div className="hidden items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/35 px-3 py-2 sm:flex">
-                <Avatar name={session?.name ?? "Admin NeuraX"} src={session?.photoUrl} className="h-8 w-8 text-xs" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-white">{session?.name ?? "Admin NeuraX"}</p>
-                  <p className="truncate text-xs text-slate-500">{session?.email ?? session?.role ?? "Superuser"}</p>
-                </div>
+              <div className="relative hidden sm:block">
+                <button
+                  type="button"
+                  className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/35 px-3 py-2 text-left transition hover:border-blue-400/40 hover:bg-slate-900"
+                  onClick={() => setProfileMenuOpen((open) => !open)}
+                >
+                  <Avatar name={session?.name ?? "Admin NeuraX"} src={session?.photoUrl} className="h-8 w-8 text-xs" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-white">{session?.name ?? "Admin NeuraX"}</p>
+                    <p className="truncate text-xs text-slate-500">{session?.email ?? session?.role ?? "Superuser"}</p>
+                  </div>
+                </button>
+                {profileMenuOpen ? (
+                  <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-800 bg-slate-950 p-2 shadow-soft">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        setChangePasswordOpen(true);
+                      }}
+                    >
+                      <KeyRound className="h-4 w-4" />
+                      Change Password
+                    </button>
+                  </div>
+                ) : null}
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="sm:hidden"
+                aria-label="Change password"
+                onClick={() => setChangePasswordOpen(true)}
+              >
+                <KeyRound className="h-5 w-5" />
+              </Button>
+              <Modal
+                open={changePasswordOpen}
+                onOpenChange={(open) => {
+                  setChangePasswordOpen(open);
+                  if (!open) resetPasswordForm();
+                }}
+                title="Change Password"
+                description={session?.email ?? "Update password akun admin"}
+              >
+                <form className="space-y-4" onSubmit={(event) => void handleChangePassword(event)}>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-slate-300">Password lama</span>
+                    <Input
+                      type="password"
+                      value={currentPassword}
+                      onChange={(event) => setCurrentPassword(event.target.value)}
+                      autoComplete="current-password"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-slate-300">Password baru</span>
+                    <Input
+                      type="password"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-slate-300">Konfirmasi password baru</span>
+                    <Input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="secondary" onClick={() => setChangePasswordOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={savingPassword}>
+                      <KeyRound className="h-4 w-4" />
+                      {savingPassword ? "Saving..." : "Save Password"}
+                    </Button>
+                  </div>
+                </form>
+              </Modal>
               <Button
                 variant="ghost"
                 size="icon"

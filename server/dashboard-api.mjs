@@ -8,7 +8,7 @@ const { Pool } = pg;
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const adminUsername = process.env.DASHBOARD_ADMIN_USERNAME ?? "admin";
-const adminPassword = process.env.DASHBOARD_ADMIN_PASSWORD ?? "P@ssw0rd";
+const initialUserPassword = process.env.DASHBOARD_INITIAL_USER_PASSWORD ?? "P@ssw0rd";
 const adminEmail = (process.env.DASHBOARD_ADMIN_EMAIL ?? "").trim().toLowerCase();
 const authSecret = process.env.DASHBOARD_AUTH_SECRET ?? crypto.randomBytes(32).toString("hex");
 const storageRoot = path.resolve(process.env.STORAGE_ROOT ?? "/storage");
@@ -58,6 +58,22 @@ function base64url(value) {
 
 function sign(value) {
   return crypto.createHmac("sha256", authSecret).update(value).digest("base64url");
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("base64url");
+  const key = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 }).toString("base64url");
+  return `scrypt$16384$8$1$${salt}$${key}`;
+}
+
+function verifyPassword(password, storedHash) {
+  if (!password || !storedHash) return false;
+  const [scheme, n, r, p, salt, expectedKey] = storedHash.split("$");
+  if (scheme !== "scrypt" || !n || !r || !p || !salt || !expectedKey) return false;
+
+  const key = crypto.scryptSync(password, salt, 64, { N: Number(n), r: Number(r), p: Number(p) });
+  const expected = Buffer.from(expectedKey, "base64url");
+  return expected.length === key.length && crypto.timingSafeEqual(expected, key);
 }
 
 function createToken(session) {
@@ -160,6 +176,10 @@ async function ensureDashboardTables() {
       created_at timestamp without time zone not null default now()
     )
   `);
+  await query(`alter table public."User" add column if not exists password text`);
+
+  const initialHash = hashPassword(initialUserPassword);
+  await query(`update public."User" set password = $1 where password is null or password = ''`, [initialHash]);
 }
 
 function formatBytes(value) {
@@ -317,6 +337,24 @@ async function findDashboardAdminUser(username) {
   return result.rows[0] ?? null;
 }
 
+async function findLoginUser(username) {
+  const normalizedUsername = String(username ?? "").trim().toLowerCase();
+  const lookupEmail = isDashboardAdminUsername(normalizedUsername) ? adminEmail : normalizedUsername;
+  if (!lookupEmail || !lookupEmail.includes("@")) return null;
+
+  const result = await query(
+    `
+      select id, email, name, "photoUrl", password, "createdAt", "updatedAt"
+      from public."User"
+      where lower(email) = $1
+      limit 1
+    `,
+    [lookupEmail],
+  );
+
+  return result.rows[0] ?? null;
+}
+
 function toAdminSession(row, fallbackUsername) {
   return {
     id: row?.id ?? null,
@@ -327,6 +365,11 @@ function toAdminSession(row, fallbackUsername) {
     role: "Superuser",
     issuedAt: new Date().toISOString(),
   };
+}
+
+function canAccessDashboard(row) {
+  if (!adminEmail) return true;
+  return String(row?.email ?? "").trim().toLowerCase() === adminEmail;
 }
 
 function toChat(row) {
@@ -374,7 +417,16 @@ app.post("/api/auth/login", async (req, res) => {
   }
 
   const { username, password } = req.body ?? {};
-  if (!isDashboardAdminUsername(username) || password !== adminPassword) {
+  let loginUser = null;
+
+  try {
+    loginUser = await findLoginUser(username);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+
+  if (!loginUser || !canAccessDashboard(loginUser) || !verifyPassword(password, loginUser.password)) {
     const failed = recordFailedLogin(ip);
     const attemptsRemaining = Math.max(maxFailedLogins - failed.count, 0);
     if (failed.blockedUntil > Date.now()) {
@@ -394,13 +446,7 @@ app.post("/api/auth/login", async (req, res) => {
   clearFailedLogins(ip);
 
   try {
-    const adminUser = await findDashboardAdminUser(username);
-    if (adminEmail && !adminUser) {
-      res.status(403).json({ error: "Dashboard admin user not found in User table" });
-      return;
-    }
-
-    const session = toAdminSession(adminUser, adminUsername);
+    const session = toAdminSession(loginUser, adminUsername);
     res.json({ session, token: createToken(session) });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -409,6 +455,36 @@ app.post("/api/auth/login", async (req, res) => {
 
 app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json({ session: req.session });
+});
+
+app.post("/api/auth/change-password", requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body ?? {};
+  if (!currentPassword || !newPassword || String(newPassword).length < 8) {
+    res.status(400).json({ error: "Password baru minimal 8 karakter" });
+    return;
+  }
+
+  try {
+    const result = await query(
+      `
+        select id, password
+        from public."User"
+        where id = $1
+        limit 1
+      `,
+      [req.session.id],
+    );
+    const user = result.rows[0];
+    if (!user || !verifyPassword(currentPassword, user.password)) {
+      res.status(401).json({ error: "Password lama tidak sesuai" });
+      return;
+    }
+
+    await query(`update public."User" set password = $1, "updatedAt" = now() where id = $2`, [hashPassword(newPassword), user.id]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get("/api/dashboard/summary", requireAuth, async (_req, res) => {
@@ -549,8 +625,13 @@ app.get("/api/dashboard/storage/file", requireAuth, async (req, res) => {
   }
 });
 
-ensureDashboardTables().catch((error) => console.error("Failed to prepare dashboard tables", error));
-
-app.listen(port, "0.0.0.0", () => {
-  console.log(`NeuraX dashboard API listening on ${port}`);
-});
+ensureDashboardTables()
+  .then(() => {
+    app.listen(port, "0.0.0.0", () => {
+      console.log(`NeuraX dashboard API listening on ${port}`);
+    });
+  })
+  .catch((error) => {
+    console.error("Failed to prepare dashboard tables", error);
+    process.exit(1);
+  });
