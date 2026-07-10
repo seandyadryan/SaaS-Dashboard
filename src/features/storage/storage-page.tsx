@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Download, Eye, File, FileAudio, FileImage, FileText, FileVideo, Folder, HardDrive, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronRight, Download, Eye, File, FileAudio, FileImage, FileText, FileVideo, Folder, HardDrive, RefreshCw } from "lucide-react";
 import { DataTable } from "@/components/data-table/data-table";
 import { Page } from "@/components/layout/page";
 import { StatCard } from "@/components/layout/stat-card";
@@ -43,15 +43,18 @@ export function StoragePage() {
   const [selectedFile, setSelectedFile] = useState<StorageFile | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [currentPath, setCurrentPath] = useState("");
 
-  const loadStorage = async () => {
+  const loadStorage = async (path = currentPath) => {
     try {
       const [summaryResponse, filesResponse] = await Promise.all([
         apiClient.get<StorageSummary>("/dashboard/storage/summary"),
-        apiClient.get<StorageFile[]>("/dashboard/storage/files"),
+        apiClient.get<StorageFile[]>("/dashboard/storage/files", {
+          params: path ? { path } : undefined,
+        }),
       ]);
       setSummary(summaryResponse.data);
-      setFiles(filesResponse.data.length ? filesResponse.data : storageFiles);
+      setFiles(filesResponse.data);
     } catch {
       setSummary(fallbackSummary);
       setFiles(storageFiles);
@@ -64,8 +67,8 @@ export function StoragePage() {
   };
 
   useEffect(() => {
-    void loadStorage();
-  }, []);
+    void loadStorage(currentPath);
+  }, [currentPath]);
 
   useEffect(() => {
     return () => {
@@ -75,7 +78,7 @@ export function StoragePage() {
 
   const openPreview = async (file: StorageFile) => {
     if (file.kind === "folder") {
-      addToast({ title: "Folder tersedia", description: file.path ?? file.name, variant: "default" });
+      setCurrentPath(file.path ?? "");
       return;
     }
 
@@ -126,6 +129,22 @@ export function StoragePage() {
     URL.revokeObjectURL(url);
   };
 
+  const goBack = () => {
+    if (!currentPath) return;
+    const parts = currentPath.split("/").filter(Boolean);
+    parts.pop();
+    setCurrentPath(parts.join("/"));
+  };
+
+  const openBreadcrumb = (index: number) => {
+    if (index < 0) {
+      setCurrentPath("");
+      return;
+    }
+
+    setCurrentPath(currentPath.split("/").filter(Boolean).slice(0, index + 1).join("/"));
+  };
+
   const columns: ColumnDef<StorageFile>[] = [
     {
       header: "File List",
@@ -152,12 +171,14 @@ export function StoragePage() {
       header: "Action",
       cell: ({ row }) => (
         <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={() => void openPreview(row.original)} aria-label="Preview">
-            <Eye className="h-4 w-4" />
+          <Button variant="ghost" size="icon" onClick={() => void openPreview(row.original)} aria-label={row.original.kind === "folder" ? "Open folder" : "Preview"}>
+            {row.original.kind === "folder" ? <Folder className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => void downloadFile(row.original)} aria-label="Download">
-            <Download className="h-4 w-4" />
-          </Button>
+          {row.original.kind !== "folder" ? (
+            <Button variant="ghost" size="icon" onClick={() => void downloadFile(row.original)} aria-label="Download">
+              <Download className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
       ),
     },
@@ -166,9 +187,9 @@ export function StoragePage() {
   return (
     <Page
       title="Storage"
-      description="File management untuk membuka foto, video, audio, PDF, text, dan file server lainnya dengan ukuran storage real dari server."
+      description="File management untuk membuka folder, foto, video, audio, PDF, text, dan file server lainnya dengan ukuran storage real dari server."
       actions={
-        <Button onClick={() => void loadStorage()}>
+        <Button onClick={() => void loadStorage(currentPath)}>
           <RefreshCw className="h-4 w-4" />
           Refresh
         </Button>
@@ -178,6 +199,28 @@ export function StoragePage() {
         <StatCard label="Total Storage" value={summary.total} change="Server filesystem" icon={HardDrive} />
         <StatCard label="Used" value={summary.used} change={`${summary.usagePercent}% usage`} icon={HardDrive} trend="down" />
         <StatCard label="Remaining" value={summary.remaining} change="Available on server" icon={HardDrive} />
+      </div>
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+          <button type="button" className="font-medium text-blue-200 transition hover:text-white" onClick={() => openBreadcrumb(-1)}>
+            Storage
+          </button>
+          {currentPath
+            .split("/")
+            .filter(Boolean)
+            .map((part, index) => (
+              <span key={`${part}-${index}`} className="flex min-w-0 items-center gap-2">
+                <ChevronRight className="h-4 w-4 text-slate-500" />
+                <button type="button" className="truncate text-slate-300 transition hover:text-white" onClick={() => openBreadcrumb(index)}>
+                  {part}
+                </button>
+              </span>
+            ))}
+        </div>
+        <Button variant="secondary" onClick={goBack} disabled={!currentPath}>
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
       </div>
       <DataTable data={files} columns={columns} searchPlaceholder="Search files..." />
 

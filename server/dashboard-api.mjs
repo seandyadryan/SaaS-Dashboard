@@ -220,10 +220,17 @@ function resolveStoragePath(relativePath = "") {
   return resolved;
 }
 
-async function walkFiles(directory, base = "", limit = 250, results = []) {
-  if (results.length >= limit) return results;
+async function listStorageDirectory(relativePath = "", limit = 250) {
+  const directory = resolveStoragePath(relativePath);
+  const directoryStats = await fs.stat(directory);
+  if (!directoryStats.isDirectory()) {
+    throw new Error("Storage path is not a directory");
+  }
 
+  const base = relativePath ? path.normalize(relativePath) : "";
   const entries = await fs.readdir(directory, { withFileTypes: true });
+  const results = [];
+
   for (const entry of entries) {
     if (results.length >= limit) break;
     if (entry.name.startsWith(".git") || entry.name === "node_modules") continue;
@@ -246,7 +253,6 @@ async function walkFiles(directory, base = "", limit = 250, results = []) {
         owner: base.split(path.sep)[0] || entry.name || "Server",
         updatedAt: stats.mtime.toISOString(),
       });
-      await walkFiles(absolute, relative, limit, results);
       continue;
     }
 
@@ -265,7 +271,11 @@ async function walkFiles(directory, base = "", limit = 250, results = []) {
     });
   }
 
-  return results;
+  return results.sort((a, b) => {
+    if (a.kind === "folder" && b.kind !== "folder") return -1;
+    if (a.kind !== "folder" && b.kind === "folder") return 1;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  });
 }
 
 app.use((req, res, next) => {
@@ -644,10 +654,11 @@ app.get("/api/dashboard/storage/summary", requireAuth, async (_req, res) => {
   }
 });
 
-app.get("/api/dashboard/storage/files", requireAuth, async (_req, res) => {
+app.get("/api/dashboard/storage/files", requireAuth, async (req, res) => {
   try {
-    const files = await walkFiles(storageRoot);
-    res.json(files.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
+    const relativePath = String(req.query.path ?? "");
+    const files = await listStorageDirectory(relativePath);
+    res.json(files);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
