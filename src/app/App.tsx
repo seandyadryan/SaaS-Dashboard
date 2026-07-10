@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "@/components/layout/app-layout";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { ProtectedRoute } from "@/features/auth/protected-route";
 
 const DashboardPage = lazy(() => import("@/features/dashboard/dashboard-page").then((module) => ({ default: module.DashboardPage })));
 const UsersPage = lazy(() => import("@/features/users/users-page").then((module) => ({ default: module.UsersPage })));
@@ -14,24 +15,28 @@ const StoragePage = lazy(() => import("@/features/storage/storage-page").then((m
 const ApiManagementPage = lazy(() => import("@/features/api-management/api-management-page").then((module) => ({ default: module.ApiManagementPage })));
 const ActivityLogPage = lazy(() => import("@/features/activity-log/activity-log-page").then((module) => ({ default: module.ActivityLogPage })));
 const SettingsPage = lazy(() => import("@/features/settings/settings-page").then((module) => ({ default: module.SettingsPage })));
+const LoginPage = lazy(() => import("@/features/auth/login-page").then((module) => ({ default: module.LoginPage })));
 
 export default function App() {
   return (
     <Suspense fallback={<div className="p-6 lg:pl-80"><PageSkeleton /></div>}>
       <Routes>
-        <Route element={<AppLayout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="ai-monitor" element={<AiMonitorPage />} />
-          <Route path="chat-history" element={<ChatHistoryPage />} />
-          <Route path="subscription" element={<SubscriptionPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="server-monitoring" element={<ServerMonitoringPage />} />
-          <Route path="storage" element={<StoragePage />} />
-          <Route path="api-management" element={<ApiManagementPage />} />
-          <Route path="activity-log" element={<ActivityLogPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="login" element={<LoginPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppLayout />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="users" element={<UsersPage />} />
+            <Route path="ai-monitor" element={<AiMonitorPage />} />
+            <Route path="chat-history" element={<ChatHistoryPage />} />
+            <Route path="subscription" element={<SubscriptionPage />} />
+            <Route path="analytics" element={<AnalyticsPage />} />
+            <Route path="server-monitoring" element={<ServerMonitoringPage />} />
+            <Route path="storage" element={<StoragePage />} />
+            <Route path="api-management" element={<ApiManagementPage />} />
+            <Route path="activity-log" element={<ActivityLogPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
         </Route>
       </Routes>
     </Suspense>

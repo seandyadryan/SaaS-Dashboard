@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToastViewport } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth-store";
 import { useUiStore } from "@/store/ui-store";
 
 const navItems = [
@@ -103,6 +104,7 @@ export function AppLayout() {
     toggleTheme,
     addToast,
   } = useUiStore();
+  const { session, logout } = useAuthStore();
 
   return (
     <div className="min-h-screen grid-surface text-white">
@@ -160,13 +162,21 @@ export function AppLayout() {
                 <Moon className="h-5 w-5" />
               </Button>
               <div className="hidden items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/35 px-3 py-2 sm:flex">
-                <Avatar name="Admin NeuraX" className="h-8 w-8 text-xs" />
+                <Avatar name={session?.name ?? "Admin NeuraX"} className="h-8 w-8 text-xs" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-white">Admin</p>
-                  <p className="truncate text-xs text-slate-500">{location.pathname === "/" ? "Dashboard" : "Console"}</p>
+                  <p className="truncate text-sm font-medium text-white">{session?.username ?? "admin"}</p>
+                  <p className="truncate text-xs text-slate-500">{session?.role ?? "Superuser"}</p>
                 </div>
               </div>
-              <Button variant="ghost" size="icon" aria-label="Logout" onClick={() => addToast({ title: "Logout requested", description: "Connect this action to your auth API.", variant: "default" })}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Logout"
+                onClick={() => {
+                  logout();
+                  addToast({ title: "Logout berhasil", description: "Sesi admin sudah ditutup.", variant: "default" });
+                }}
+              >
                 <LogOut className="h-5 w-5" />
               </Button>
             </div>
