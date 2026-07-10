@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-export function Avatar({ name, className }: { name: string; className?: string }) {
+export function Avatar({ name, src, className }: { name: string; src?: string | null; className?: string }) {
   const initials = name
     .split(" ")
     .map((part) => part[0])
@@ -15,7 +15,7 @@ export function Avatar({ name, className }: { name: string; className?: string }
         className,
       )}
     >
-      {initials}
+      {src ? <img src={src} alt={name} className="h-full w-full rounded-full object-cover" referrerPolicy="no-referrer" /> : initials}
     </div>
   );
 }

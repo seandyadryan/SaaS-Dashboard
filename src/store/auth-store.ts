@@ -5,8 +5,11 @@ const AUTH_STORAGE_KEY = "neurax_admin_session";
 const LAST_ACTIVITY_KEY = "neurax_admin_last_activity";
 
 type AdminSession = {
+  id?: string | null;
   username: string;
+  email?: string | null;
   name: string;
+  photoUrl?: string | null;
   role: "Superuser";
   issuedAt: string;
 };

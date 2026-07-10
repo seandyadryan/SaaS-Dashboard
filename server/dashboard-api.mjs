@@ -9,6 +9,7 @@ const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const adminUsername = process.env.DASHBOARD_ADMIN_USERNAME ?? "admin";
 const adminPassword = process.env.DASHBOARD_ADMIN_PASSWORD ?? "P@ssw0rd";
+const adminEmail = (process.env.DASHBOARD_ADMIN_EMAIL ?? "").trim().toLowerCase();
 const authSecret = process.env.DASHBOARD_AUTH_SECRET ?? crypto.randomBytes(32).toString("hex");
 const storageRoot = path.resolve(process.env.STORAGE_ROOT ?? "/storage");
 const storageStatPath = path.resolve(process.env.STORAGE_STAT_PATH ?? storageRoot);
@@ -293,6 +294,41 @@ function toUser(row) {
   };
 }
 
+function isDashboardAdminUsername(username) {
+  const normalizedUsername = String(username ?? "").trim().toLowerCase();
+  return normalizedUsername === adminUsername.toLowerCase() || (Boolean(adminEmail) && normalizedUsername === adminEmail);
+}
+
+async function findDashboardAdminUser(username) {
+  const normalizedUsername = String(username ?? "").trim().toLowerCase();
+  const lookupEmail = adminEmail || (normalizedUsername.includes("@") ? normalizedUsername : "");
+  if (!lookupEmail) return null;
+
+  const result = await query(
+    `
+      select id, email, name, "photoUrl", "createdAt", "updatedAt"
+      from public."User"
+      where lower(email) = $1
+      limit 1
+    `,
+    [lookupEmail],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+function toAdminSession(row, fallbackUsername) {
+  return {
+    id: row?.id ?? null,
+    username: row?.email ?? fallbackUsername,
+    email: row?.email ?? null,
+    name: row?.name || row?.email || fallbackUsername,
+    photoUrl: row?.photoUrl ?? null,
+    role: "Superuser",
+    issuedAt: new Date().toISOString(),
+  };
+}
+
 function toChat(row) {
   return {
     id: row.id,
@@ -323,7 +359,7 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   const ip = getClientIp(req);
   const attempt = getLoginAttempt(ip);
   if (attempt.blockedUntil > Date.now()) {
@@ -338,7 +374,7 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   const { username, password } = req.body ?? {};
-  if (username !== adminUsername || password !== adminPassword) {
+  if (!isDashboardAdminUsername(username) || password !== adminPassword) {
     const failed = recordFailedLogin(ip);
     const attemptsRemaining = Math.max(maxFailedLogins - failed.count, 0);
     if (failed.blockedUntil > Date.now()) {
@@ -357,14 +393,18 @@ app.post("/api/auth/login", (req, res) => {
 
   clearFailedLogins(ip);
 
-  const session = {
-    username: adminUsername,
-    name: "NeuraX Superuser",
-    role: "Superuser",
-    issuedAt: new Date().toISOString(),
-  };
+  try {
+    const adminUser = await findDashboardAdminUser(username);
+    if (adminEmail && !adminUser) {
+      res.status(403).json({ error: "Dashboard admin user not found in User table" });
+      return;
+    }
 
-  res.json({ session, token: createToken(session) });
+    const session = toAdminSession(adminUser, adminUsername);
+    res.json({ session, token: createToken(session) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get("/api/auth/me", requireAuth, (req, res) => {

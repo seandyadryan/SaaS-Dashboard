@@ -208,10 +208,10 @@ export function AppLayout() {
                 <Moon className="h-5 w-5" />
               </Button>
               <div className="hidden items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/35 px-3 py-2 sm:flex">
-                <Avatar name={session?.name ?? "Admin NeuraX"} className="h-8 w-8 text-xs" />
+                <Avatar name={session?.name ?? "Admin NeuraX"} src={session?.photoUrl} className="h-8 w-8 text-xs" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-white">{session?.username ?? "admin"}</p>
-                  <p className="truncate text-xs text-slate-500">{session?.role ?? "Superuser"}</p>
+                  <p className="truncate text-sm font-medium text-white">{session?.name ?? "Admin NeuraX"}</p>
+                  <p className="truncate text-xs text-slate-500">{session?.email ?? session?.role ?? "Superuser"}</p>
                 </div>
               </div>
               <Button
