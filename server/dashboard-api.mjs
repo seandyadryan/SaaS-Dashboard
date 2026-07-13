@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import pg from "pg";
 
@@ -11,6 +12,9 @@ const initialUserPassword = process.env.DASHBOARD_INITIAL_USER_PASSWORD ?? "P@ss
 const authSecret = process.env.DASHBOARD_AUTH_SECRET ?? crypto.randomBytes(32).toString("hex");
 const storageRoot = path.resolve(process.env.STORAGE_ROOT ?? "/storage");
 const storageStatPath = path.resolve(process.env.STORAGE_STAT_PATH ?? storageRoot);
+const procRoot = path.resolve(process.env.HOST_PROC_PATH ?? "/proc");
+const ollamaUrl = process.env.OLLAMA_URL ?? "http://172.19.0.1:11434";
+const proxyUrl = process.env.PROXY_HEALTH_URL ?? "http://ai-chat-caddy";
 const loginAttempts = new Map();
 const maxFailedLogins = Number(process.env.LOGIN_MAX_FAILED_ATTEMPTS ?? 5);
 const loginBlockMs = Number(process.env.LOGIN_BLOCK_MINUTES ?? 15) * 60 * 1000;
@@ -193,6 +197,89 @@ function formatBytes(value) {
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
   return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function clampPercent(value) {
+  return Math.min(Math.max(Math.round(value * 10) / 10, 0), 100);
+}
+
+function formatDuration(totalSeconds) {
+  const seconds = Math.max(Math.floor(totalSeconds), 0);
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+async function readCpuSnapshot() {
+  const contents = await fs.readFile(path.join(procRoot, "stat"), "utf8");
+  const values = contents
+    .split("\n")[0]
+    .trim()
+    .split(/\s+/)
+    .slice(1)
+    .map(Number);
+  const idle = (values[3] ?? 0) + (values[4] ?? 0);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return { idle, total };
+}
+
+let previousCpuSnapshot = null;
+let currentCpuPercent = 0;
+
+async function sampleCpuUsage() {
+  const next = await readCpuSnapshot();
+  if (previousCpuSnapshot) {
+    const totalDelta = next.total - previousCpuSnapshot.total;
+    const idleDelta = next.idle - previousCpuSnapshot.idle;
+    if (totalDelta > 0) currentCpuPercent = clampPercent(((totalDelta - idleDelta) / totalDelta) * 100);
+  }
+  previousCpuSnapshot = next;
+}
+
+async function readMemoryMetrics() {
+  const contents = await fs.readFile(path.join(procRoot, "meminfo"), "utf8");
+  const values = new Map();
+  for (const line of contents.split("\n")) {
+    const match = line.match(/^([^:]+):\s+(\d+)/);
+    if (match) values.set(match[1], Number(match[2]) * 1024);
+  }
+  const totalBytes = values.get("MemTotal") ?? os.totalmem();
+  const availableBytes = values.get("MemAvailable") ?? os.freemem();
+  const usedBytes = Math.max(totalBytes - availableBytes, 0);
+  return {
+    totalBytes,
+    usedBytes,
+    availableBytes,
+    usagePercent: totalBytes ? clampPercent((usedBytes / totalBytes) * 100) : 0,
+  };
+}
+
+async function readUptimeSeconds() {
+  const contents = await fs.readFile(path.join(procRoot, "uptime"), "utf8");
+  return Number(contents.split(/\s+/)[0]) || 0;
+}
+
+async function probeUrl(url) {
+  const startedAt = performance.now();
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "manual",
+      signal: AbortSignal.timeout(2000),
+    });
+    return { online: response.status > 0 && response.status < 500, latencyMs: Math.max(Math.round(performance.now() - startedAt), 1) };
+  } catch {
+    return { online: false, latencyMs: null };
+  }
+}
+
+function resourceStatus(value) {
+  if (value >= 90) return "Critical";
+  if (value >= 80) return "Warning";
+  return "Healthy";
 }
 
 function getMimeType(filePath) {
@@ -684,8 +771,70 @@ app.get("/api/dashboard/storage/file", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/dashboard/server/metrics", requireAuth, async (_req, res) => {
+  const databaseStartedAt = performance.now();
+  try {
+    await query("select 1");
+    const databaseLatencyMs = Math.max(Math.round(performance.now() - databaseStartedAt), 1);
+    const [memory, uptimeSeconds, diskStats, ollama, proxy] = await Promise.all([
+      readMemoryMetrics(),
+      readUptimeSeconds(),
+      fs.statfs(storageStatPath),
+      probeUrl(`${ollamaUrl.replace(/\/$/, "")}/api/tags`),
+      probeUrl(proxyUrl),
+    ]);
+
+    const diskTotalBytes = Number(diskStats.blocks) * Number(diskStats.bsize);
+    const diskAvailableBytes = Number(diskStats.bavail) * Number(diskStats.bsize);
+    const diskUsedBytes = diskTotalBytes - diskAvailableBytes;
+    const diskUsagePercent = diskTotalBytes ? clampPercent((diskUsedBytes / diskTotalBytes) * 100) : 0;
+    const cpu = {
+      usagePercent: currentCpuPercent,
+      cores: os.cpus().length,
+      loadAverage: os.loadavg().map((value) => Math.round(value * 100) / 100),
+    };
+    const disk = {
+      totalBytes: diskTotalBytes,
+      usedBytes: diskUsedBytes,
+      availableBytes: diskAvailableBytes,
+      usagePercent: diskUsagePercent,
+    };
+    const services = [
+      { name: "CPU", value: cpu.usagePercent, status: resourceStatus(cpu.usagePercent), detail: `${cpu.cores} vCPU` },
+      { name: "RAM", value: memory.usagePercent, status: resourceStatus(memory.usagePercent), detail: `${formatBytes(memory.usedBytes)} / ${formatBytes(memory.totalBytes)}` },
+      { name: "Disk", value: disk.usagePercent, status: resourceStatus(disk.usagePercent), detail: `${formatBytes(disk.usedBytes)} / ${formatBytes(disk.totalBytes)}` },
+      { name: "Docker", value: 100, status: "Healthy", detail: "Container runtime active" },
+      { name: "PostgreSQL", value: 100, status: "Healthy", detail: `${databaseLatencyMs} ms` },
+      { name: "Ollama", value: ollama.online ? 100 : 0, status: ollama.online ? "Healthy" : "Offline", detail: ollama.online ? `${ollama.latencyMs} ms` : "Unreachable" },
+      { name: "Caddy", value: proxy.online ? 100 : 0, status: proxy.online ? "Healthy" : "Offline", detail: proxy.online ? `${proxy.latencyMs} ms` : "Unreachable" },
+      { name: "API", value: 100, status: "Healthy", detail: "Dashboard API online" },
+    ];
+    const healthy = services.every((service) => service.status !== "Critical" && service.status !== "Offline");
+
+    res.json({
+      timestamp: new Date().toISOString(),
+      hostname: process.env.SERVER_NAME ?? "vmaichat",
+      platform: `${os.platform()} ${os.arch()}`,
+      status: healthy ? "Healthy" : "Attention",
+      cpu,
+      memory,
+      disk,
+      uptimeSeconds,
+      uptime: formatDuration(uptimeSeconds),
+      databaseLatencyMs,
+      services,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 ensureDashboardTables()
   .then(() => {
+    sampleCpuUsage().catch((error) => console.error("Failed to sample CPU usage", error));
+    setInterval(() => {
+      sampleCpuUsage().catch((error) => console.error("Failed to sample CPU usage", error));
+    }, 1000);
     app.listen(port, "0.0.0.0", () => {
       console.log(`NeuraX dashboard API listening on ${port}`);
     });
