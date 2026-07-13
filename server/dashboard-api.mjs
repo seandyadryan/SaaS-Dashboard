@@ -410,7 +410,7 @@ function toUser(row) {
     role: "User",
     premium: false,
     createdAt: row.createdAt,
-    status: "Active",
+    status: Number(row.bLock ?? 0) === 1 ? "Suspended" : "Active",
     plan: "Free",
     lastLogin: row.updatedAt,
     device: "Web Browser",
@@ -651,12 +651,74 @@ app.get("/api/dashboard/summary", requireAuth, async (_req, res) => {
 app.get("/api/dashboard/users", requireAuth, async (_req, res) => {
   try {
     const result = await query(`
-      select id, "googleId", email, name, "photoUrl", "createdAt", "updatedAt"
+      select id, "googleId", email, name, "photoUrl", "bLock", "createdAt", "updatedAt"
       from public."User"
       order by "createdAt" desc
       limit 100
     `);
     res.json(result.rows.map(toUser));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/api/dashboard/users/:id", requireAuth, async (req, res) => {
+  const id = String(req.params.id ?? "").trim();
+  const name = String(req.body?.name ?? "").trim();
+  const email = String(req.body?.email ?? "").trim().toLowerCase();
+
+  if (!id || !name || name.length > 120 || !email || email.length > 255 || !/^\S+@\S+\.\S+$/.test(email)) {
+    res.status(400).json({ error: "Nama dan email yang valid wajib diisi" });
+    return;
+  }
+
+  try {
+    const result = await query(
+      `
+        update public."User"
+        set name = $2, email = $3, "updatedAt" = now()
+        where id = $1
+        returning id, "googleId", email, name, "photoUrl", "bLock", "createdAt", "updatedAt"
+      `,
+      [id, name, email],
+    );
+
+    if (!result.rows[0]) {
+      res.status(404).json({ error: "User tidak ditemukan" });
+      return;
+    }
+
+    res.json(toUser(result.rows[0]));
+  } catch (error) {
+    if (error.code === "23505") {
+      res.status(409).json({ error: "Email sudah digunakan user lain" });
+      return;
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/dashboard/users/:id", requireAuth, async (req, res) => {
+  const id = String(req.params.id ?? "").trim();
+  if (!id) {
+    res.status(400).json({ error: "User ID tidak valid" });
+    return;
+  }
+  if (id === String(req.session.id ?? "")) {
+    res.status(400).json({ error: "Akun yang sedang login tidak dapat dihapus" });
+    return;
+  }
+
+  try {
+    const result = await query(
+      `delete from public."User" where id = $1 returning id, email, name`,
+      [id],
+    );
+    if (!result.rows[0]) {
+      res.status(404).json({ error: "User tidak ditemukan" });
+      return;
+    }
+    res.json({ ok: true, user: result.rows[0] });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

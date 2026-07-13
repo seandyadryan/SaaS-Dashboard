@@ -23,6 +23,7 @@ export function useDashboardData(fallbackUsers: User[], fallbackChats: Chat[]) {
   const [users, setUsers] = useState<User[]>(fallbackUsers);
   const [chats, setChats] = useState<Chat[]>(fallbackChats);
   const [source, setSource] = useState<"database" | "fallback">("fallback");
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +60,7 @@ export function useDashboardData(fallbackUsers: User[], fallbackChats: Chat[]) {
     return () => {
       cancelled = true;
     };
-  }, [fallbackChats, fallbackUsers]);
+  }, [fallbackChats, fallbackUsers, revision]);
 
-  return { summary, users, chats, source };
+  return { summary, users, chats, source, reload: () => setRevision((value) => value + 1) };
 }
